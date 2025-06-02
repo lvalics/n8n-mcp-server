@@ -16,6 +16,7 @@ import {
 import { getEnvConfig } from './environment.js';
 import { setupWorkflowTools } from '../tools/workflow/index.js';
 import { setupExecutionTools } from '../tools/execution/index.js';
+import { setupRAGTools } from '../tools/rag/index.js';
 import { setupResourceHandlers } from '../resources/index.js';
 import { createApiService } from '../api/n8n-client.js';
 
@@ -73,12 +74,16 @@ export async function configureServer(): Promise<Server> {
  */
 function setupToolListRequestHandler(server: Server): void {
   server.setRequestHandler(ListToolsRequestSchema, async () => {
-    // Combine tools from workflow and execution modules
+    // Combine tools from workflow, execution, and RAG modules
     const workflowTools = await setupWorkflowTools();
     const executionTools = await setupExecutionTools();
+    const ragTools = await setupRAGTools();
+    
+    // Import workflow generator tool
+    const { workflowGeneratorTool } = await import('../tools/workflow-generator.js');
 
     return {
-      tools: [...workflowTools, ...executionTools],
+      tools: [...workflowTools, ...executionTools, ...ragTools, workflowGeneratorTool],
     };
   });
 }
@@ -114,6 +119,17 @@ function setupToolCallRequestHandler(server: Server): void {
         RunWebhookHandler
       } = await import('../tools/execution/index.js');
       
+      const {
+        SearchWorkflowsHandler,
+        GetInsightsHandler,
+        GenerateWorkflowHandler
+      } = await import('../tools/rag/index.js');
+      
+      const {
+        workflowGeneratorTool,
+        handleGenerateCompleteWorkflow
+      } = await import('../tools/workflow-generator.js');
+      
       // Route the tool call to the appropriate handler
       if (toolName === 'list_workflows') {
         const handler = new ListWorkflowsHandler();
@@ -148,6 +164,26 @@ function setupToolCallRequestHandler(server: Server): void {
       } else if (toolName === 'run_webhook') {
         const handler = new RunWebhookHandler();
         result = await handler.execute(args);
+      } else if (toolName === 'rag_search_workflows') {
+        const handler = new SearchWorkflowsHandler();
+        result = await handler.execute(args as any);
+      } else if (toolName === 'rag_get_insights') {
+        const handler = new GetInsightsHandler();
+        result = await handler.execute(args as any);
+      } else if (toolName === 'rag_generate_workflow') {
+        const handler = new GenerateWorkflowHandler();
+        result = await handler.execute(args as any);
+      } else if (toolName === 'generate_complete_workflow') {
+        const generatorResult = await handleGenerateCompleteWorkflow(args);
+        result = {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(generatorResult, null, 2)
+            }
+          ],
+          isError: !generatorResult.success
+        };
       } else {
         throw new Error(`Unknown tool: ${toolName}`);
       }

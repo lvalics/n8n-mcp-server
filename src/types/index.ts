@@ -25,6 +25,13 @@ export interface ToolCallResult {
   isError?: boolean;
 }
 
+// Generic tool handler interface
+export interface ToolHandler<T = any> {
+  name: string;
+  description: string;
+  execute(args: T): Promise<ToolCallResult>;
+}
+
 // Type for n8n workflow object
 export interface Workflow {
   id: string;
