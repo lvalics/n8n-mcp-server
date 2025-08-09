@@ -39,15 +39,20 @@ export class UpdateWorkflowHandler extends BaseWorkflowToolHandler {
       // Get the current workflow to update
       const currentWorkflow = await this.apiService.getWorkflow(workflowId);
       
-      // Prepare update object with changes
-      const workflowData: Record<string, any> = { ...currentWorkflow };
+      // Prepare update object with only allowed properties (per n8n API schema)
+      const workflowData: Record<string, any> = {
+        name: name !== undefined ? name : currentWorkflow.name,
+        nodes: nodes !== undefined ? nodes : currentWorkflow.nodes,
+        connections: connections !== undefined ? connections : currentWorkflow.connections,
+        settings: currentWorkflow.settings
+      };
       
-      // Update fields if provided
-      if (name !== undefined) workflowData.name = name;
-      if (nodes !== undefined) workflowData.nodes = nodes;
-      if (connections !== undefined) workflowData.connections = connections;
-      if (active !== undefined) workflowData.active = active;
-      if (tags !== undefined) workflowData.tags = tags;
+      // Add optional staticData if it exists
+      if (currentWorkflow.staticData !== undefined) {
+        workflowData.staticData = currentWorkflow.staticData;
+      }
+      
+      // Note: active and tags are read-only properties and cannot be updated via this endpoint
       
       // Update the workflow
       const updatedWorkflow = await this.apiService.updateWorkflow(workflowId, workflowData);
@@ -55,14 +60,21 @@ export class UpdateWorkflowHandler extends BaseWorkflowToolHandler {
       // Build a summary of changes
       const changesArray = [];
       if (name !== undefined && name !== currentWorkflow.name) changesArray.push(`name: "${currentWorkflow.name}" → "${name}"`);
-      if (active !== undefined && active !== currentWorkflow.active) changesArray.push(`active: ${currentWorkflow.active} → ${active}`);
       if (nodes !== undefined) changesArray.push('nodes updated');
       if (connections !== undefined) changesArray.push('connections updated');
-      if (tags !== undefined) changesArray.push('tags updated');
+      
+      // Add warnings for read-only properties
+      const warnings = [];
+      if (active !== undefined) warnings.push('active (read-only, use activate/deactivate workflow tools)');
+      if (tags !== undefined) warnings.push('tags (read-only property)');
       
       const changesSummary = changesArray.length > 0
         ? `Changes: ${changesArray.join(', ')}`
         : 'No changes were made';
+      
+      const warningsSummary = warnings.length > 0
+        ? ` Note: Ignored ${warnings.join(', ')}.`
+        : '';
       
       return this.formatSuccess(
         {
@@ -70,7 +82,7 @@ export class UpdateWorkflowHandler extends BaseWorkflowToolHandler {
           name: updatedWorkflow.name,
           active: updatedWorkflow.active
         },
-        `Workflow updated successfully. ${changesSummary}`
+        `Workflow updated successfully. ${changesSummary}${warningsSummary}`
       );
     }, args);
   }
@@ -109,11 +121,11 @@ export function getUpdateWorkflowToolDefinition(): ToolDefinition {
         },
         active: {
           type: 'boolean',
-          description: 'Whether the workflow should be active',
+          description: 'Whether the workflow should be active (read-only: use activate/deactivate workflow tools instead)',
         },
         tags: {
           type: 'array',
-          description: 'Updated tags to associate with the workflow',
+          description: 'Tags to associate with the workflow (read-only: cannot be updated via this endpoint)',
           items: {
             type: 'string',
           },
